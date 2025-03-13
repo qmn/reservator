@@ -13,7 +13,7 @@ from adafruit_rgb_display import st7735
 
 # Camera
 from picamera2 import Picamera2
-from libcamera import controls
+from libcamera import controls as libcamera_controls
 
 # QR decoding
 from PIL import Image, ImageDraw, ImageFont
@@ -33,7 +33,7 @@ class Display:
         BAUDRATE = 24000000
         spi = board.SPI()
         self.disp = st7735.ST7735R(spi,
-            rotation=180,
+            rotation=0,
             height=128,
             x_offset=2,
             y_offset=3,   # 1.44" ST7735R
@@ -79,7 +79,11 @@ class Display:
         curtime = datetime.now()
         fps = 1. / (curtime - self.lasttime).total_seconds()
         self.lasttime = curtime
-        draw.text((2, 82), f" fps: {fps:.1f}", fill="black", font=self.w95)
+        draw.text((2, 82), f"fps: {fps:.1f}", fill="black", font=self.w95)
+        # Read control
+        knob = controls.read_knob()
+        mins = {0: 15, 1: 30, 2: 60}[knob]
+        draw.text((2, 97), f"{mins} minutes", fill="black", font=self.w95)
         # Write time
         draw.text((80, 2), curtime.strftime("%I:%M:%S"), fill="white", font=self.w95)
         self.disp.image(img)
@@ -101,6 +105,27 @@ class Display:
 display = Display()
 display.log("Starting Reservator...")
 
+class Controls:
+    def __init__(self):
+        self.pin17 = digitalio.DigitalInOut(board.D17)
+        self.pin27 = digitalio.DigitalInOut(board.D27)
+        self.pin17.direction = digitalio.Direction.INPUT
+        self.pin27.direction = digitalio.Direction.INPUT
+        self.pin17.pull = digitalio.Pull.DOWN
+        self.pin27.pull = digitalio.Pull.DOWN
+
+    def read_knob(self):
+        if self.pin27.value == True:
+            return 2
+        elif self.pin17.value == True:
+            return 1
+        else:
+            return 0
+
+# Get controls
+controls = Controls()
+display.log("Controls initialized")
+
 def print_and_log(*args):
     print(*args)
     display.log(*args)
@@ -117,7 +142,7 @@ def start_chrome(headless=True):
 def start_camera():
     picam2 = Picamera2()
     picam2.start()
-    picam2.set_controls({"AfMode": controls.AfModeEnum.Continuous})
+    picam2.set_controls({"AfMode": libcamera_controls.AfModeEnum.Continuous})
     return picam2
 
 def load_cookie(driver, cookie_fn):
@@ -141,6 +166,9 @@ def reserve_room(driver, url):
     if "Use Now" in buttons_dict:
         # buttons_dict["Use Now"].click()
         print_and_log("  Could have clicked 'Use Now'")
+        knob = controls.read_knob()
+        mins = [15, 30, 60][knob]
+        print_and_log(f"  Done for {mins} mins")
         time.sleep(1)
     else:
         print_and_log("  Failed to find 'Use Now'")
